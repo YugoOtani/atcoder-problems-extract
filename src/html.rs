@@ -93,7 +93,13 @@ document.querySelectorAll('.statement var').forEach((el) => {{
   span.textContent = '\\(' + el.textContent.trim() + '\\)';
   el.replaceWith(span);
 }});
-window.MathJax = {{ tex: {{ inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] }} }};
+window.MathJax = {{
+  tex: {{ inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] }},
+  options: {{
+    // MathJax skips pre elements by default, but AtCoder uses them for input formats.
+    skipHtmlTags: {{'[-]': ['pre']}}
+  }}
+}};
 </script>
 <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
 "#, nav, q, statement, q);
@@ -225,7 +231,8 @@ th,td { padding:10px; text-align:left; border-bottom:1px solid var(--line); }
 
 #[cfg(test)]
 mod tests {
-    use super::extract_statement;
+    use super::{extract_statement, render_problem_page};
+    use crate::model::ContestFile;
 
     #[test]
     fn extracts_japanese_statement_and_rewrites_root_urls() {
@@ -240,5 +247,16 @@ mod tests {
         assert!(out.contains("問題文"));
         assert!(!out.contains("Problem Statement"));
         assert!(out.contains("https://atcoder.jp/img/a.png"));
+    }
+
+    #[test]
+    fn mathjax_processes_formulas_inside_input_format_pre_elements() {
+        let contest = ContestFile {
+            date: "2026-09-13".into(),
+            problems: Vec::new(),
+        };
+        let page = render_problem_page(&contest, 0, "<pre><var>N</var></pre>");
+
+        assert!(page.contains("skipHtmlTags: {'[-]': ['pre']}"));
     }
 }

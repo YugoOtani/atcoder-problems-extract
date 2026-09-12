@@ -15,6 +15,8 @@ use std::{
     path::{Path, PathBuf},
     process::{Command as ProcessCommand, ExitStatus},
 };
+#[cfg(target_os = "linux")]
+use std::process::Stdio;
 
 #[derive(Parser)]
 #[command(name = "daily", version, about = "Anonymous daily AtCoder mini-contest generator")]
@@ -128,19 +130,7 @@ fn open_file(path: &Path) -> Result<()> {
 
     #[cfg(target_os = "linux")]
     let status = if is_wsl() {
-        let output = ProcessCommand::new("wslpath")
-            .arg("-w")
-            .arg(path)
-            .output()
-            .context("failed to run wslpath")?;
-        ensure_success("wslpath", output.status)?;
-        let windows_path =
-            String::from_utf8(output.stdout).context("wslpath returned a non-UTF-8 path")?;
-
-        ProcessCommand::new("explorer.exe")
-            .arg(windows_path.trim_end_matches(['\r', '\n']))
-            .status()
-            .context("failed to run explorer.exe")?
+        return open_file_in_wsl(path);
     } else {
         ProcessCommand::new("xdg-open")
             .arg(path)
@@ -160,6 +150,50 @@ fn is_wsl() -> bool {
         || std::env::var_os("WSL_DISTRO_NAME").is_some()
         || fs::read_to_string("/proc/sys/kernel/osrelease")
             .is_ok_and(|release| release.to_ascii_lowercase().contains("microsoft"))
+}
+
+#[cfg(target_os = "linux")]
+fn open_file_in_wsl(path: &Path) -> Result<()> {
+    let output = ProcessCommand::new("wslpath")
+        .arg("-w")
+        .arg(path)
+        .output()
+        .context("failed to run wslpath")?;
+    ensure_success("wslpath", output.status)?;
+    let windows_path =
+        String::from_utf8(output.stdout).context("wslpath returned a non-UTF-8 path")?;
+    let windows_path = windows_path.trim_end_matches(['\r', '\n']);
+
+    const FIREFOX_LOCATIONS: [&str; 2] = [
+        "/mnt/c/Program Files/Mozilla Firefox/firefox.exe",
+        "/mnt/c/Program Files (x86)/Mozilla Firefox/firefox.exe",
+    ];
+    for firefox in FIREFOX_LOCATIONS {
+        if Path::new(firefox).is_file() && spawn_wsl_program(firefox, windows_path).is_ok() {
+            return Ok(());
+        }
+    }
+
+    if spawn_wsl_program("firefox.exe", windows_path).is_ok() {
+        return Ok(());
+    }
+
+    // explorer.exe may exit with status 1 even when the associated application
+    // was opened successfully, so only process creation is checked here.
+    spawn_wsl_program("explorer.exe", windows_path)
+        .context("failed to launch Firefox or the Windows file opener")?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_wsl_program(program: &str, path: &str) -> std::io::Result<()> {
+    ProcessCommand::new(program)
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
 }
 
 fn ensure_success(command: &str, status: ExitStatus) -> Result<()> {
