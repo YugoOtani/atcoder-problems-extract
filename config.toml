@@ -1,0 +1,86 @@
+username = "Yugotani"
+problem_count = 5
+cache_ttl_hours = 24
+
+[selection]
+exclude_accepted = true
+exclude_previously_selected = true
+shuffle_final_order = true
+max_generation_attempts = 5000
+
+[[contest.types]]
+name = "ABC"
+weight = 2.0
+min_count = 1
+
+[[contest.types]]
+name = "ARC"
+weight = 1.0
+min_count = 1
+
+[contest]
+max_same_contest = 1
+
+[[difficulty.bands]]
+name = "gray"
+min = 0
+max = 399
+weight = 20.0
+
+[[difficulty.bands]]
+name = "brown"
+min = 400
+max = 799
+weight = 40.0
+
+[[difficulty.bands]]
+name = "green"
+min = 800
+max = 1199
+weight = 28.0
+
+[[difficulty.bands]]
+name = "cyan"
+min = 1200
+max = 1599
+weight = 10.0
+
+[[difficulty.bands]]
+name = "blue"
+min = 1600
+max = 1999
+weight = 2.0
+
+# Daily difficulty-count constraints. Omitted min/max mean unbounded.
+[[difficulty.constraints]]
+max = 799
+min_count = 2
+
+[[difficulty.constraints]]
+max = 799
+max_count = 3
+
+[[difficulty.constraints]]
+min = 800
+min_count = 1
+
+[[difficulty.constraints]]
+min = 1200
+max_count = 2
+
+[[difficulty.constraints]]
+min = 1600
+max_count = 1
+
+# Age weighting inside a selected difficulty/contest bucket.
+# First matching band is used; the final band can omit max_years as a fallback.
+[[age.bands]]
+max_years = 2.0
+weight = 1.0
+
+[[age.bands]]
+max_years = 5.0
+weight = 1.1
+
+[[age.bands]]
+weight = 1.2
