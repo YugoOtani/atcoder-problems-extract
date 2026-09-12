@@ -7,13 +7,28 @@ pub fn extract_statement(page_html: &str) -> Result<String> {
     let doc = Html::parse_document(page_html);
     let ja_selector = Selector::parse("#task-statement .lang-ja").unwrap();
     let task_selector = Selector::parse("#task-statement").unwrap();
-    let html = if let Some(node) = doc.select(&ja_selector).next() {
-        node.inner_html()
+    let statement = if let Some(node) = doc.select(&ja_selector).next() {
+        node
     } else if let Some(node) = doc.select(&task_selector).next() {
-        node.inner_html()
+        node
     } else {
         bail!("AtCoder task statement not found; page structure may have changed")
     };
+
+    let mut html = statement.inner_html();
+    // AtCoder places the score in a direct <p> immediately before the first .part.
+    let mut children = statement.child_elements();
+    if let (Some(score), Some(body)) = (children.next(), children.next()) {
+        let has_score_structure = score.value().name() == "p"
+            && body.value().name() == "div"
+            && body
+                .attr("class")
+                .is_some_and(|classes| classes.split_whitespace().any(|class| class == "part"));
+        if has_score_structure {
+            html = html.replacen(&score.html(), "", 1);
+        }
+    }
+
     Ok(normalize_atcoder_urls(&html))
 }
 
@@ -239,13 +254,22 @@ mod tests {
         let html = r#"
         <html><body>
           <div id="task-statement">
-            <span class="lang-ja"><h3>問題文</h3><p><var>N</var></p><img src="/img/a.png"></span>
+            <span class="lang-ja">
+              <p><var>400</var></p>
+              <div class="part">
+                <h3>問題文</h3>
+                <p>この段落は残す。</p>
+                <img src="/img/a.png">
+              </div>
+            </span>
             <span class="lang-en"><h3>Problem Statement</h3></span>
           </div>
         </body></html>"#;
         let out = extract_statement(html).unwrap();
         assert!(out.contains("問題文"));
         assert!(!out.contains("Problem Statement"));
+        assert!(!out.contains("<p><var>400</var></p>"));
+        assert!(out.contains("この段落は残す"));
         assert!(out.contains("https://atcoder.jp/img/a.png"));
     }
 
