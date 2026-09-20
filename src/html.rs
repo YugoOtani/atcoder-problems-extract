@@ -1,5 +1,9 @@
-use crate::model::{Candidate, ContestFile, ContestProblemFile};
+use crate::{
+    bookmark::Bookmark,
+    model::{Candidate, ContestFile, ContestProblemFile},
+};
 use anyhow::{bail, Result};
+use chrono::{DateTime, FixedOffset};
 use scraper::{Html, Selector};
 use std::{fs, path::Path};
 
@@ -64,7 +68,10 @@ pub fn write_contest(
     fs::write(dir.join("result.html"), render_result(&contest))?;
     for (i, p) in contest.problems.iter().enumerate() {
         fs::write(dir.join(format!("q{}.html", i + 1)), render_problem_page(&contest, i, &statements[i]))?;
-        fs::write(dir.join("reveal").join(format!("q{}.html", i + 1)), render_reveal_page(p))?;
+        fs::write(
+            dir.join("reveal").join(format!("q{}.html", i + 1)),
+            render_reveal_page(&contest.date, p),
+        )?;
     }
     fs::write(dir.join("contest.json"), serde_json::to_vec_pretty(&contest)?)?;
     Ok(contest)
@@ -72,7 +79,13 @@ pub fn write_contest(
 
 fn render_index(contest: &ContestFile) -> String {
     let buttons = contest.problems.iter().enumerate().map(|(i, _)| {
-        format!(r#"<a class="problem-card" href="q{}.html"><span>Q{}</span><small>Open problem</small></a>"#, i + 1, i + 1)
+        let slot = format!("q{}", i + 1);
+        format!(r#"<a class="problem-card" href="{}.html"><span>Q{}</span><small>Open problem</small><small class="bookmark-indicator" data-date="{}" data-slot="{}" hidden>★ Bookmarked</small></a>"#,
+            slot,
+            i + 1,
+            html_escape(&contest.date),
+            slot,
+        )
     }).collect::<Vec<_>>().join("\n");
     layout("Daily Contest", "style.css", &format!(r#"
 <main class="home">
@@ -80,7 +93,10 @@ fn render_index(contest: &ContestFile) -> String {
   <h1>{}</h1>
   <p class="muted">Contest / problem index / difficulty are hidden until reveal.</p>
   <section class="problem-grid">{}</section>
-  <a class="button danger" href="result.html">Reveal all problems</a>
+  <div class="actions left">
+    <a class="button danger" href="result.html">Reveal all problems</a>
+    <a class="button bookmarks-link" href="/bookmarks">Bookmarks</a>
+  </div>
 </main>"#, html_escape(&contest.date), buttons))
 }
 
@@ -93,10 +109,10 @@ fn render_problem_page(contest: &ContestFile, index: usize, statement: &str) -> 
     let body = format!(r#"
 <header class="topbar">
   <a class="brand" href="index.html">Daily Contest</a>
-  <nav>{}</nav>
+  <div class="topbar-actions"><nav>{}</nav><a class="button compact bookmarks-link" href="/bookmarks">Bookmarks</a></div>
 </header>
 <main class="problem-wrap">
-  <div class="problem-heading"><span class="q-badge">Q{}</span></div>
+  <div class="problem-heading"><span class="q-badge">Q{}</span>{}</div>
   <article class="statement">{}</article>
   <div class="actions">
     <a class="button danger" href="reveal/q{}.html">Reveal / submit</a>
@@ -117,11 +133,11 @@ window.MathJax = {{
 }};
 </script>
 <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
-"#, nav, q, statement, q);
+"#, nav, q, bookmark_control(&contest.date, &format!("q{q}"), false), statement, q);
     layout(&format!("Q{q}"), "style.css", &body)
 }
 
-fn render_reveal_page(p: &ContestProblemFile) -> String {
+fn render_reveal_page(date: &str, p: &ContestProblemFile) -> String {
     let body = format!(r#"
 <main class="reveal">
   <p class="eyebrow">{}</p>
@@ -133,7 +149,9 @@ fn render_reveal_page(p: &ContestProblemFile) -> String {
   <div class="actions left">
     <a class="button primary" href="{}" target="_blank" rel="noopener noreferrer">Submit on AtCoder</a>
     <a class="button" href="{}" target="_blank" rel="noopener noreferrer">Open problem</a>
+    {}
     <a class="button" href="../{}.html">Back to {}</a>
+    <a class="button bookmarks-link" href="/bookmarks">Bookmarks</a>
   </div>
 </main>"#,
         html_escape(&p.slot.to_ascii_uppercase()),
@@ -144,6 +162,7 @@ fn render_reveal_page(p: &ContestProblemFile) -> String {
         html_escape(&p.problem_id),
         html_escape(&p.submit_url),
         html_escape(&p.url),
+        bookmark_control(date, &p.slot, false),
         html_escape(&p.slot),
         html_escape(&p.slot.to_ascii_uppercase()),
     );
@@ -154,7 +173,7 @@ fn render_result(contest: &ContestFile) -> String {
     let rows = contest.problems.iter().map(|p| format!(r#"
 <tr>
   <td>{}</td><td>{} {}</td><td>{}</td><td>{}</td>
-  <td><a href="{}" target="_blank" rel="noopener noreferrer">Problem</a> · <a href="{}" target="_blank" rel="noopener noreferrer">Submit</a></td>
+  <td><div class="result-links"><span><a href="{}" target="_blank" rel="noopener noreferrer">Problem</a> · <a href="{}" target="_blank" rel="noopener noreferrer">Submit</a></span>{}</div></td>
 </tr>"#,
         html_escape(&p.slot.to_ascii_uppercase()),
         html_escape(&p.contest_id.to_ascii_uppercase()),
@@ -163,13 +182,14 @@ fn render_result(contest: &ContestFile) -> String {
         p.difficulty,
         html_escape(&p.url),
         html_escape(&p.submit_url),
+        bookmark_control(&contest.date, &p.slot, false),
     )).collect::<Vec<_>>().join("");
     layout("Results", "style.css", &format!(r#"
 <main class="results">
   <p class="eyebrow">Daily Contest {}</p>
   <h1>Reveal all</h1>
   <table><thead><tr><th>Slot</th><th>Problem</th><th>Title</th><th>Difficulty</th><th>Link</th></tr></thead><tbody>{}</tbody></table>
-  <a class="button" href="index.html">Back</a>
+  <div class="actions left"><a class="button" href="index.html">Back</a><a class="button bookmarks-link" href="/bookmarks">Bookmarks</a></div>
 </main>"#, html_escape(&contest.date), rows))
 }
 
@@ -181,9 +201,84 @@ fn layout(title: &str, css_path: &str, body: &str) -> String {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{}</title>
 <link rel="stylesheet" href="{}">
+<link rel="stylesheet" href="/bookmark.css">
+<script defer src="/bookmark.js"></script>
 </head>
 <body>{}</body>
 </html>"#, html_escape(title), css_path, body)
+}
+
+fn bookmark_control(date: &str, slot: &str, bookmarked: bool) -> String {
+    let state = if bookmarked { "true" } else { "false" };
+    format!(
+        r#"<span class="bookmark-control"><button type="button" class="button bookmark-button" data-date="{}" data-slot="{}" data-bookmarked="{}" aria-pressed="{}">{}</button><span class="bookmark-message" role="status" aria-live="polite"></span></span>"#,
+        html_escape(date),
+        html_escape(slot),
+        state,
+        state,
+        if bookmarked { "★ Bookmarked" } else { "☆ Bookmark" },
+    )
+}
+
+pub fn render_bookmarks_page(bookmarks: &[Bookmark], active_date: &str) -> String {
+    let content = if bookmarks.is_empty() {
+        r#"<p class="empty-state">No bookmarked problems yet.</p>"#.to_owned()
+    } else {
+        let rows = bookmarks
+            .iter()
+            .map(|bookmark| {
+                format!(
+                    r#"<tr>
+  <td>{} {}</td>
+  <td>{}</td>
+  <td>{}</td>
+  <td>{}</td>
+  <td><div class="result-links"><span><a href="/{}/{}.html">HTML</a> · <a href="{}" target="_blank" rel="noopener noreferrer">Problem</a> · <a href="{}" target="_blank" rel="noopener noreferrer">Submit</a></span><button type="button" class="button bookmark-button bookmark-status" data-bookmarked="true" aria-pressed="true" disabled>★ Bookmarked</button></div></td>
+</tr>"#,
+                    html_escape(&bookmark.contest_id.to_ascii_uppercase()),
+                    html_escape(&bookmark.problem_index),
+                    html_escape(&bookmark.title),
+                    bookmark.difficulty,
+                    html_escape(&format_bookmarked_at(&bookmark.bookmarked_at)),
+                    html_escape(&bookmark.source_date),
+                    html_escape(&bookmark.source_slot),
+                    html_escape(&bookmark.url),
+                    html_escape(&bookmark.submit_url),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            r#"<table><thead><tr><th>Problem</th><th>Title</th><th>Difficulty</th><th>Bookmarked</th><th>Links</th></tr></thead><tbody>{rows}</tbody></table>"#
+        )
+    };
+
+    layout(
+        "Bookmarks",
+        &format!("/{}/style.css", html_escape(active_date)),
+        &format!(
+            r#"
+<main class="results bookmarks-page">
+  <p class="eyebrow">Daily AtCoder</p>
+  <h1>Bookmarks</h1>
+  {}
+  <div class="actions left"><a class="button" href="/{}/">Back to daily contest</a></div>
+</main>"#,
+            content,
+            html_escape(active_date),
+        ),
+    )
+}
+
+fn format_bookmarked_at(input: &str) -> String {
+    let Ok(timestamp) = DateTime::parse_from_rfc3339(input) else {
+        return input.to_owned();
+    };
+    let jst = FixedOffset::east_opt(9 * 3600).expect("valid JST offset");
+    timestamp
+        .with_timezone(&jst)
+        .format("%Y-%m-%d %H:%M JST")
+        .to_string()
 }
 
 fn normalize_atcoder_urls(input: &str) -> String {
@@ -243,11 +338,181 @@ th,td { padding:10px; text-align:left; border-bottom:1px solid var(--line); }
 @media (max-width:640px) { .topbar { padding:10px 12px; gap:8px; } .topbar nav { overflow-x:auto; } .problem-wrap { padding:24px 14px 56px; } th:nth-child(3),td:nth-child(3) { display:none; } }
 "#;
 
+pub const BOOKMARK_STYLE: &str = r#"
+.topbar-actions { display:flex; align-items:center; gap:12px; min-width:0; }
+.button.compact { padding:5px 10px; font-size:.9rem; }
+.problem-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.bookmark-control { display:inline-flex; flex-direction:column; align-items:flex-start; gap:2px; }
+.bookmark-button { cursor:pointer; white-space:nowrap; }
+.bookmark-button[aria-pressed="true"] { border-color:#bf8700; background:#fff8c5; color:#633c01; }
+.bookmark-button:disabled { cursor:wait; opacity:.65; }
+.bookmark-status:disabled { cursor:default; opacity:1; }
+.bookmark-message { min-height:1.2em; color:#cf222e; font-size:.78rem; line-height:1.2; }
+.bookmark-indicator { color:#9a6700 !important; font-weight:700; }
+.result-links { display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
+.empty-state { margin:28px 0; padding:24px; border:1px dashed var(--line); border-radius:8px; color:var(--muted); }
+.bookmarks-page .actions { margin-top:28px; }
+.actions { flex-wrap:wrap; }
+@media (max-width:640px) {
+  .topbar-actions { gap:6px; overflow-x:auto; }
+  .button.compact { display:none; }
+  .problem-heading { align-items:flex-start; }
+  .bookmarks-page th:nth-child(2),.bookmarks-page td:nth-child(2),
+  .bookmarks-page th:nth-child(4),.bookmarks-page td:nth-child(4) { display:none; }
+}
+"#;
+
+pub const BOOKMARK_SCRIPT: &str = r#"
+(() => {
+  'use strict';
+
+  const requestHeaders = { 'X-Daily-Atcoder': '1' };
+
+  function pageProblem() {
+    const match = location.pathname.match(/^\/(\d{4}-\d{2}-\d{2})\/(?:reveal\/)?(q\d+)\.html$/);
+    return match ? { date: match[1], slot: match[2] } : null;
+  }
+
+  function createControl(date, slot) {
+    const wrapper = document.createElement('span');
+    wrapper.className = 'bookmark-control';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'button bookmark-button';
+    button.dataset.date = date;
+    button.dataset.slot = slot;
+    button.dataset.bookmarked = 'false';
+    button.setAttribute('aria-pressed', 'false');
+    button.textContent = '☆ Bookmark';
+    const message = document.createElement('span');
+    message.className = 'bookmark-message';
+    message.setAttribute('role', 'status');
+    message.setAttribute('aria-live', 'polite');
+    wrapper.append(button, message);
+    return wrapper;
+  }
+
+  function ensureLegacyControls() {
+    const problem = pageProblem();
+    if (problem && !document.querySelector('.bookmark-button')) {
+      const target = location.pathname.includes('/reveal/')
+        ? document.querySelector('.actions.left')
+        : document.querySelector('.problem-heading');
+      if (target) target.append(createControl(problem.date, problem.slot));
+    }
+
+    const result = location.pathname.match(/^\/(\d{4}-\d{2}-\d{2})\/result\.html$/);
+    if (result && !document.querySelector('.bookmark-button')) {
+      document.querySelectorAll('tbody tr').forEach((row) => {
+        const slot = row.cells[0]?.textContent.trim().toLowerCase();
+        const target = row.cells[row.cells.length - 1];
+        if (slot && target) target.append(createControl(result[1], slot));
+      });
+    }
+
+    const index = location.pathname.match(/^\/(\d{4}-\d{2}-\d{2})\/(?:index\.html)?$/);
+    if (index && !document.querySelector('.bookmark-indicator')) {
+      document.querySelectorAll('.problem-card').forEach((card) => {
+        const match = card.getAttribute('href')?.match(/^(q\d+)\.html$/);
+        if (!match) return;
+        const indicator = document.createElement('small');
+        indicator.className = 'bookmark-indicator';
+        indicator.dataset.date = index[1];
+        indicator.dataset.slot = match[1];
+        indicator.hidden = true;
+        indicator.textContent = '★ Bookmarked';
+        card.append(indicator);
+      });
+    }
+
+    if (!/^\/bookmarks\/?$/.test(location.pathname) && !document.querySelector('.bookmarks-link')) {
+      const link = document.createElement('a');
+      link.className = 'button bookmarks-link';
+      link.href = '/bookmarks';
+      link.textContent = 'Bookmarks';
+      const target = document.querySelector('.topbar') || document.querySelector('.actions.left') || document.querySelector('.home');
+      if (target) target.append(link);
+    }
+  }
+
+  function endpoint(button) {
+    return '/api/bookmarks/' + encodeURIComponent(button.dataset.date) + '/' + encodeURIComponent(button.dataset.slot);
+  }
+
+  function renderButton(button, bookmarked) {
+    button.dataset.bookmarked = String(bookmarked);
+    button.setAttribute('aria-pressed', String(bookmarked));
+    button.textContent = bookmarked ? '★ Bookmarked' : '☆ Bookmark';
+  }
+
+  function messageFor(button, text) {
+    const message = button.parentElement?.querySelector('.bookmark-message');
+    if (message) message.textContent = text;
+  }
+
+  async function readState(button) {
+    button.disabled = true;
+    try {
+      const response = await fetch(endpoint(button), { headers: requestHeaders, cache: 'no-store' });
+      if (!response.ok) throw new Error('request failed');
+      const data = await response.json();
+      renderButton(button, data.bookmarked === true);
+    } catch (_) {
+      messageFor(button, 'Could not load bookmark.');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function toggle(button) {
+    const wasBookmarked = button.dataset.bookmarked === 'true';
+    button.disabled = true;
+    messageFor(button, '');
+    try {
+      const response = await fetch(endpoint(button), {
+        method: wasBookmarked ? 'DELETE' : 'POST',
+        headers: requestHeaders,
+      });
+      if (!response.ok) throw new Error('request failed');
+      const data = await response.json();
+      renderButton(button, data.bookmarked === true);
+    } catch (_) {
+      renderButton(button, wasBookmarked);
+      messageFor(button, 'Could not update bookmark.');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function refreshIndicator(indicator) {
+    try {
+      const url = '/api/bookmarks/' + encodeURIComponent(indicator.dataset.date) + '/' + encodeURIComponent(indicator.dataset.slot);
+      const response = await fetch(url, { headers: requestHeaders, cache: 'no-store' });
+      if (!response.ok) return;
+      const data = await response.json();
+      indicator.hidden = data.bookmarked !== true;
+    } catch (_) {
+      // The indicator is optional; leave it hidden when status cannot be loaded.
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    ensureLegacyControls();
+    document.querySelectorAll('.bookmark-button').forEach((button) => {
+      if (button.disabled) return;
+      button.addEventListener('click', () => toggle(button));
+      readState(button);
+    });
+    document.querySelectorAll('.bookmark-indicator').forEach(refreshIndicator);
+  });
+})();
+"#;
+
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_statement, render_problem_page};
-    use crate::model::ContestFile;
+    use super::{extract_statement, render_bookmarks_page, render_problem_page};
+    use crate::{bookmark::Bookmark, model::ContestFile};
 
     #[test]
     fn extracts_japanese_statement_and_rewrites_root_urls() {
@@ -282,5 +547,32 @@ mod tests {
         let page = render_problem_page(&contest, 0, "<pre><var>N</var></pre>");
 
         assert!(page.contains("skipHtmlTags: {'[-]': ['pre']}"));
+        assert!(page.contains(r#"data-date="2026-09-13" data-slot="q1""#));
+        assert!(!page.contains("data-problem-id"));
+    }
+
+    #[test]
+    fn bookmarks_page_links_to_local_html_without_an_active_toggle() {
+        let bookmark = Bookmark {
+            problem_id: "abc123_d".into(),
+            contest_id: "abc123".into(),
+            problem_index: "D".into(),
+            title: "Example".into(),
+            difficulty: 1200,
+            url: "https://example.com/problem".into(),
+            submit_url: "https://example.com/submit".into(),
+            bookmarked_at: "2026-09-20T00:00:00Z".into(),
+            source_date: "2026-09-20".into(),
+            source_slot: "q1".into(),
+        };
+
+        let page = render_bookmarks_page(&[bookmark], "2026-09-20");
+
+        assert!(page.contains(r#"href="/2026-09-20/q1.html">HTML</a>"#));
+        assert!(page.contains(r#"class="button bookmark-button bookmark-status""#));
+        assert!(page.contains("disabled>★ Bookmarked</button>"));
+        assert!(!page.contains("data-problem-id"));
+        assert!(!page.contains("data-remove-row"));
+        assert!(!page.contains(r#"class="button bookmarks-link""#));
     }
 }

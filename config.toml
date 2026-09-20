@@ -25,7 +25,7 @@ max_same_contest = 1
 name = "gray"
 min = 0
 max = 399
-weight = 20.0
+weight = 10.0
 
 [[difficulty.bands]]
 name = "brown"
@@ -37,19 +37,19 @@ weight = 40.0
 name = "green"
 min = 800
 max = 1199
-weight = 28.0
+weight = 30.0
 
 [[difficulty.bands]]
 name = "cyan"
 min = 1200
 max = 1599
-weight = 10.0
+weight = 13.0
 
 [[difficulty.bands]]
 name = "blue"
 min = 1600
 max = 1999
-weight = 2.0
+weight = 7.0
 
 # Daily difficulty-count constraints. Omitted min/max mean unbounded.
 [[difficulty.constraints]]

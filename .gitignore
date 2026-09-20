@@ -1,4 +1,6 @@
 /target/
 /cache/
 /contests/
+/bookmarks.json
+/.bookmarks.json.tmp
 .env

@@ -2,7 +2,9 @@
 
 AtCoder Problems のデータを使って、ABC / ARC の未AC・未出題問題から 1 日 5 問程度の匿名ミニコンテストを生成する Rust CLI です。
 
-問題を解いている間は **コンテスト名・問題番号・Difficulty を表示しません**。問題文は静的HTMLとしてブラウザに表示され、各問題の `Reveal / submit` から正体を開示した後、AtCoder の問題ページまたは提出ページへ移動して普段どおり提出します。
+問題を解いている間は **コンテスト名・問題番号・Difficulty を表示しません**。問題文はローカルWebサーバーからブラウザに表示され、各問題の `Reveal / submit` から正体を開示した後、AtCoder の問題ページまたは提出ページへ移動して普段どおり提出します。
+
+問題ページの `Bookmark` から、正体を開示せずにあとで解き直したい問題を保存できます。ブックマークはデータルートの `bookmarks.json` に保存され、`Bookmarks` 画面から一覧と保存元のHTMLを確認できます。解除は保存元の問題ページで行います。
 
 ## Commands
 
@@ -19,6 +21,8 @@ cargo build --release
 daily start
 daily open 2026-09-13
 ```
+
+どちらのコマンドもブラウザを開いた後、ローカルWebサーバーとして動作し続けます。終了するときはターミナルで `Ctrl+C` を押してください。
 
 別ディレクトリをデータルートにする場合:
 
@@ -43,6 +47,12 @@ contests/
 ```
 
 `contest.json` だけが各Qの元問題情報を保持します。匿名問題ページには contest id / problem index / Difficulty を埋め込みません。
+
+ブックマークは日付をまたいで共有されます。
+
+```text
+bookmarks.json
+```
 
 ## Selection defaults
 

@@ -1,8 +1,10 @@
 mod api;
+mod bookmark;
 mod config;
 mod html;
 mod model;
 mod select;
+mod server;
 
 use anyhow::{bail, Context, Result};
 use api::ApiClient;
@@ -50,7 +52,7 @@ fn start(root: &Path) -> Result<()> {
     let contest_dir = root.join("contests").join(&date);
     if contest_dir.join("index.html").exists() {
         println!("Today's contest already exists: {date}");
-        return open_html(&contest_dir.join("index.html"));
+        return serve_contest(root, &date);
     }
 
     fs::create_dir_all(root.join("contests"))?;
@@ -86,7 +88,7 @@ fn start(root: &Path) -> Result<()> {
     fs::rename(&temp_dir, &contest_dir)
         .with_context(|| format!("failed to finalize {}", contest_dir.display()))?;
     println!("Generated: {}", contest_dir.display());
-    open_html(&contest_dir.join("index.html"))
+    serve_contest(root, &date)
 }
 
 fn open_existing(root: &Path, date: Option<&str>) -> Result<()> {
@@ -94,7 +96,7 @@ fn open_existing(root: &Path, date: Option<&str>) -> Result<()> {
     validate_date(&date)?;
     let index = root.join("contests").join(&date).join("index.html");
     if !index.exists() { bail!("contest not found: {date}"); }
-    open_html(&index)
+    serve_contest(root, &date)
 }
 
 fn today_jst() -> String {
@@ -108,32 +110,34 @@ fn validate_date(s: &str) -> Result<()> {
     Ok(())
 }
 
-fn open_html(path: &Path) -> Result<()> {
-    let absolute = path.canonicalize()?;
-    open_file(&absolute)?;
-    println!("Opened: {}", absolute.display());
-    Ok(())
+fn serve_contest(root: &Path, date: &str) -> Result<()> {
+    let server = server::BookmarkServer::bind(root, date)?;
+    let url = server.url()?;
+    println!("Serving: {url}");
+    println!("Press Ctrl+C to stop.");
+    open_url(&url)?;
+    server.run()
 }
 
-fn open_file(path: &Path) -> Result<()> {
+fn open_url(url: &str) -> Result<()> {
     #[cfg(target_os = "windows")]
     let status = ProcessCommand::new("explorer.exe")
-        .arg(path)
+        .arg(url)
         .status()
         .context("failed to run explorer.exe")?;
 
     #[cfg(target_os = "macos")]
     let status = ProcessCommand::new("open")
-        .arg(path)
+        .arg(url)
         .status()
         .context("failed to run open")?;
 
     #[cfg(target_os = "linux")]
     let status = if is_wsl() {
-        return open_file_in_wsl(path);
+        return open_url_in_wsl(url);
     } else {
         ProcessCommand::new("xdg-open")
-            .arg(path)
+            .arg(url)
             .status()
             .context("failed to run xdg-open")?
     };
@@ -153,34 +157,24 @@ fn is_wsl() -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn open_file_in_wsl(path: &Path) -> Result<()> {
-    let output = ProcessCommand::new("wslpath")
-        .arg("-w")
-        .arg(path)
-        .output()
-        .context("failed to run wslpath")?;
-    ensure_success("wslpath", output.status)?;
-    let windows_path =
-        String::from_utf8(output.stdout).context("wslpath returned a non-UTF-8 path")?;
-    let windows_path = windows_path.trim_end_matches(['\r', '\n']);
-
+fn open_url_in_wsl(url: &str) -> Result<()> {
     const FIREFOX_LOCATIONS: [&str; 2] = [
         "/mnt/c/Program Files/Mozilla Firefox/firefox.exe",
         "/mnt/c/Program Files (x86)/Mozilla Firefox/firefox.exe",
     ];
     for firefox in FIREFOX_LOCATIONS {
-        if Path::new(firefox).is_file() && spawn_wsl_program(firefox, windows_path).is_ok() {
+        if Path::new(firefox).is_file() && spawn_wsl_program(firefox, url).is_ok() {
             return Ok(());
         }
     }
 
-    if spawn_wsl_program("firefox.exe", windows_path).is_ok() {
+    if spawn_wsl_program("firefox.exe", url).is_ok() {
         return Ok(());
     }
 
     // explorer.exe may exit with status 1 even when the associated application
     // was opened successfully, so only process creation is checked here.
-    spawn_wsl_program("explorer.exe", windows_path)
+    spawn_wsl_program("explorer.exe", url)
         .context("failed to launch Firefox or the Windows file opener")?;
     Ok(())
 }
