@@ -11,6 +11,7 @@ AtCoder Problems のデータを使って、ABC / ARC の未AC・未出題問題
 ```bash
 cargo run -- start
 cargo run -- open 2026-09-13
+cargo run -- root set /path/to/daily-atcoder
 ```
 
 リリースビルドして PATH に置く場合:
@@ -20,17 +21,30 @@ cargo build --release
 # target/release/daily(.exe)
 daily start
 daily open 2026-09-13
+daily root set /path/to/daily-atcoder
 ```
 
-どちらのコマンドもブラウザを開いた後、ローカルWebサーバーとして動作し続けます。終了するときはターミナルで `Ctrl+C` を押してください。
+`start` と `open` はブラウザを開いた後、ローカルWebサーバーとして動作し続けます。終了するときはターミナルで `Ctrl+C` を押してください。
 
 別ディレクトリをデータルートにする場合:
 
 ```bash
 daily --root /path/to/daily-atcoder start
+# または、起動せずにデータルートだけを保存
+daily root set /path/to/daily-atcoder
 ```
 
-`--root` 配下に `config.toml`, `cache/`, `contests/` を置きます。
+どちらの方法でも指定したパスは `~/.daily-config` に保存されるため、次回からは `--root` を省略できます。
+保存先を変更するときは、別のパスを指定して同じコマンドを再実行してください。
+`--root` 配下に `config.toml`, `cache/`, `contests/` を置きます。まだ保存設定がない場合は、従来どおりカレントディレクトリをデータルートとして使います。
+
+利用可能なコマンドとオプションはヘルプで確認できます。
+
+```bash
+daily help
+daily help root
+daily help root set
+```
 
 ## Generated files
 

@@ -5,6 +5,7 @@ mod html;
 mod model;
 mod select;
 mod server;
+mod settings;
 
 use anyhow::{bail, Context, Result};
 use api::ApiClient;
@@ -23,8 +24,9 @@ use std::process::Stdio;
 #[derive(Parser)]
 #[command(name = "daily", version, about = "Anonymous daily AtCoder mini-contest generator")]
 struct Cli {
-    #[arg(long, default_value = ".")]
-    root: PathBuf,
+    /// Data root. When specified, it is saved to ~/.daily-config for future runs.
+    #[arg(long)]
+    root: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -35,14 +37,37 @@ enum Command {
     Start,
     /// Open a previously generated contest. Defaults to today.
     Open { date: Option<String> },
+    /// Manage the default data root.
+    Root {
+        #[command(subcommand)]
+        command: RootCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum RootCommand {
+    /// Save the data root used when --root is omitted.
+    Set { path: PathBuf },
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
-    let root = cli.root.canonicalize().unwrap_or(cli.root.clone());
-    match cli.command {
-        Command::Start => start(&root),
-        Command::Open { date } => open_existing(&root, date.as_deref()),
+    let Cli { root, command } = Cli::parse();
+    match command {
+        Command::Root {
+            command: RootCommand::Set { path },
+        } => {
+            let root = settings::set_root(&path)?;
+            println!("Saved data root: {}", root.display());
+            Ok(())
+        }
+        command => {
+            let root = settings::resolve_root(root.as_deref())?;
+            match command {
+                Command::Start => start(&root),
+                Command::Open { date } => open_existing(&root, date.as_deref()),
+                Command::Root { .. } => unreachable!(),
+            }
+        }
     }
 }
 
